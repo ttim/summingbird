@@ -1,14 +1,13 @@
 package com.twitter.summingbird.storm.collector
 
-import backtype.storm.spout.SpoutOutputCollector
+import org.apache.storm.spout.SpoutOutputCollector
 import com.twitter.algebird.Semigroup
 import com.twitter.summingbird.online.executor.KeyValueShards
 import com.twitter.summingbird.online.option.SummerBuilder
 import com.twitter.algebird.util.summer.{ AsyncSummer, Incrementor }
 import com.twitter.util.{ Await, Future, Time }
 import java.util.{ List => JList }
-import scala.collection.mutable.{ ListBuffer, Map => MMap }
-import scala.collection.JavaConverters._
+import scala.collection.mutable.{ Map => MMap }
 
 /**
  *
