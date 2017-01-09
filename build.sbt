@@ -18,7 +18,7 @@ def isScala210x(scalaVersion: String) = scalaBinaryVersion(scalaVersion) == "2.1
 
 val algebirdVersion = "0.12.0"
 val bijectionVersion = "0.9.1"
-val chillVersion = "0.7.3"
+val chillVersion = "0.8.3-t1478696915000-095c0270e854cbd14cdccd02297a67bfe32257a8"
 val commonsHttpClientVersion = "3.1"
 val commonsLangVersion = "2.6"
 val finagleVersion = "6.35.0"
@@ -28,11 +28,11 @@ val log4jVersion = "1.2.16"
 val novocodeJunitVersion = "0.10"
 val scalaCheckVersion = "1.12.2"
 val scalatestVersion = "2.2.4"
-val scaldingVersion = "0.16.1-RC3"
+val scaldingVersion = "0.16.2-t1483975913000-b413dfecf97622e90e0b363b364c74d99b3911ee"
 val slf4jVersion = "1.6.6"
 val storehausVersion = "0.15.0-RC1"
 val stormDep = "org.apache.storm" % "storm-core" % "1.0.2"
-val tormentaVersion = "0.11.1"
+val tormentaVersion = "0.11.3-t1478700656000-c46ba62fa5d743e0dd13dd456240c8f118bbc2ba"
 val utilVersion = "6.34.0"
 
 val extraSettings = Project.defaultSettings ++ mimaDefaultSettings ++ scalariformSettings
