@@ -35,26 +35,12 @@ private[storm] object FlatMapBoltProvider {
   private def wrapTimeBatchIDKV[T, K, V](existingOp: FlatMapOperation[T, (K, V)])(
     batcher: Batcher
   ): FlatMapOperation[Item[T], (AggregateKey[K], AggregateValue[V])] =
-    FlatMapOperation.generic[Item[T], (AggregateKey[K], AggregateValue[V])]({
-      case (ts, data) =>
-        existingOp.apply(data).map { vals =>
-          vals.map {
-            case (k, v) =>
-              ((k, batcher.batchOf(ts)), (ts, v))
-          }
-        }
-    })
+    existingOp.lift[Timestamp].map { case (ts, (key, value)) =>
+      ((key, batcher.batchOf(ts)), (ts, value))
+    }
 
-  def wrapTime[T, U, O](
-    existingOp: FlatMapOperation[T, U],
-    finalTransform: (Item[U]) => O
-  ): FlatMapOperation[Item[T], O] = {
-    FlatMapOperation.generic({ x: (Timestamp, T) =>
-      existingOp.apply(x._2).map { vals =>
-        vals.map(finalTransform(x._1, _))
-      }
-    })
-  }
+  def wrapTime[T, U](existingOp: FlatMapOperation[T, U]): FlatMapOperation[Item[T], Item[U]] =
+    existingOp.lift[Timestamp]
 }
 
 private[storm] case class FlatMapBoltProvider(
@@ -132,7 +118,7 @@ private[storm] case class FlatMapBoltProvider(
 
   private def itemBolt[T, U, O](finalTransform: (Item[U]) => O): Topology.Bolt[Item[T], O] = {
     val operation = foldOperations[T, U](node.members.reverse)
-    val wrappedOperation = wrapTime(operation, finalTransform)
+    val wrappedOperation = wrapTime(operation).map(finalTransform)
 
     Topology.Bolt(
       parallelism.parHint,

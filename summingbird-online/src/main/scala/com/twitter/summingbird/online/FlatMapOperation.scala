@@ -112,16 +112,10 @@ class FlatMappedOperation[T, Intermediate, U](
     new FlatMappedOperation[T, Intermediate, S](source, t => fn(t).flatMap(second))
 
   override def lift[S]: FlatMapOperation[(S, T), (S, U)] =
-    new FlatMappedOperation[(S, T), (S, Intermediate), (S, U)](source.lift, si => fn(si).map((si._1, _)))
+    new FlatMappedOperation[(S, T), (S, Intermediate), (S, U)](source.lift, si => fn(si._2).map((si._1, _)))
 
   override def apply(t: T): Future[TraversableOnce[U]] = built(t)
   override def close(): Unit = source.close()
-}
-
-class GenericFlatMapOperation[T, U](@transient fm: T => Future[TraversableOnce[U]])
-    extends FlatMapOperation[T, U] {
-  val boxed = Externalizer(fm)
-  def apply(t: T) = boxed.get(t)
 }
 
 class IdentityFlatMapOperation[T] extends FlatMapOperation[T, T] {
@@ -131,7 +125,7 @@ class IdentityFlatMapOperation[T] extends FlatMapOperation[T, T] {
   // But if we are composed with something else, just become it
   override def andThen[V](fmo: FlatMapOperation[T, V]): FlatMapOperation[T, V] = fmo
 
-  override def lift[S]: FlatMapOperation[(S, T), (S, T)] = ???
+  override def lift[S]: FlatMapOperation[(S, T), (S, T)] = new IdentityFlatMapOperation[(S, T)]
 }
 
 object FlatMapOperation {
@@ -139,9 +133,6 @@ object FlatMapOperation {
 
   def apply[T, U](fm: T => TraversableOnce[U]): FlatMapOperation[T, U] =
     new IdentityFlatMapOperation[T].flatMap(fm)
-
-  def generic[T, U](fm: T => Future[TraversableOnce[U]]): FlatMapOperation[T, U] =
-    new GenericFlatMapOperation(fm)
 
   def combine[T, K, V, JoinedV](fmSupplier: => FlatMapOperation[T, (K, V)],
     storeSupplier: OnlineServiceFactory[K, JoinedV]): FlatMapOperation[T, (K, (V, Option[JoinedV]))] =
