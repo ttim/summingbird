@@ -18,6 +18,9 @@ package com.twitter.summingbird.storm
 
 import com.twitter.summingbird._
 import com.twitter.summingbird.batch.Batcher
+import com.twitter.summingbird.online.FlatMapOperation
+import com.twitter.util.Await
+import com.twitter.util.Future.DEFAULT_TIMEOUT
 import org.scalatest.WordSpec
 import org.scalacheck._
 
@@ -156,6 +159,56 @@ class StormLaws extends WordSpec {
       TestPlatform.store("store1"),
       TestPlatform.store("store2")
     )(x => List(x * 10), x => List((x, x)), x => List((x, x))))
+  }
+
+  "Just for test" in {
+    val f1: (Int => TraversableOnce[Int]) = x => Some(x * 2)
+    val f2: (Int => TraversableOnce[(Int, Int)]) = x => Some((x, x))
+    val f3: (((Int, Int)) => TraversableOnce[Int]) = pair => List(
+      pair._1,
+      pair._2,
+      pair._1 + pair._2,
+      pair._1 * pair._2
+    )
+    val composed = flatMap[Int, (Int, Int), Int](flatMap[Int, Int, (Int, Int)](f1, f2), f3)
+    val number = 1000000
+
+    timed("regular compose", { () =>
+      Range(1, number).foreach(x => composed(x))
+    })
+
+    val composedOp = FlatMapOperation.apply(f1).flatMap(f2).flatMap(f3)
+    timed("flatMapOp wait", { () =>
+      Range(1, number).foreach(x => Await.result(composedOp(x), DEFAULT_TIMEOUT))
+    })
+    timed("flatMapOp no wait", { () =>
+      Range(1, number).foreach(x => composedOp(x))
+    })
+    val opOnWrap = FlatMapOperation.apply(composed)
+    timed("flatMapOp only on wrap wait", { () =>
+      Range(1, number).foreach(x => Await.result(opOnWrap(x), DEFAULT_TIMEOUT).foreach(e => ()))
+    })
+    timed("flatMapOp only on wrap no wait", { () =>
+      Range(1, number).foreach(x => opOnWrap(x))
+    })
+  }
+
+  def flatMap[A, B, C](
+    f1: A => TraversableOnce[B],
+    f2: B => TraversableOnce[C]
+  ): (A => TraversableOnce[C]) =
+    x => f1(x).flatMap(f2)
+
+  def timed(caption: String, block: () => Unit): Unit = {
+    println(caption + " warming start")
+    block()
+    block()
+    block()
+    println(caption + " warming end")
+
+    val time = System.currentTimeMillis()
+    block()
+    println(caption + " time: " + (System.currentTimeMillis() - time) / 1000.0)
   }
 
   "StormPlatform should be efficent in real world job" in {
