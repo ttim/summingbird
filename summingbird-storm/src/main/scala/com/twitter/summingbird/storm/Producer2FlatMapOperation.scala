@@ -17,8 +17,7 @@
 package com.twitter.summingbird.storm
 
 import com.twitter.summingbird._
-import com.twitter.summingbird.online.FlatMapOperation
-import com.twitter.summingbird.online.OnlineServiceFactory
+import com.twitter.summingbird.online.{ FlatMapOperation, OnlineServiceFactory }
 
 /**
  * A utility for converting a series of producers into a single FlatMapOperation
@@ -39,8 +38,12 @@ object Producer2FlatMapOperation {
             FlatMapOperation.combine(
               acc.asInstanceOf[FlatMapOperation[Any, (Any, Any)]],
               wrapper.asInstanceOf[OnlineServiceFactory[Any, Any]]).asInstanceOf[FlatMapOperation[Any, Any]]
-          case OptionMappedProducer(_, op) => acc.andThen(FlatMapOperation[Any, Any](op.andThen(_.iterator).asInstanceOf[Any => TraversableOnce[Any]]))
-          case FlatMappedProducer(_, op) => acc.andThen(FlatMapOperation(op).asInstanceOf[FlatMapOperation[Any, Any]])
+          case OptionMappedProducer(_, op) =>
+            val opCasted = op.asInstanceOf[Any => Option[Any]]
+            acc.flatMap(opCasted(_))
+          case FlatMappedProducer(_, op) =>
+            val opCasted = op.asInstanceOf[Any => TraversableOnce[Any]]
+            acc.flatMap(opCasted)
           case WrittenProducer(_, sinkSupplier) =>
             acc.andThen(FlatMapOperation.write(() => sinkSupplier.toFn))
           case IdentityKeyedProducer(_) => acc
@@ -50,13 +53,17 @@ object Producer2FlatMapOperation {
           case Source(_) => sys.error("Should not schedule a source inside a flat mapper")
           case Summer(_, _, _) => sys.error("Should not schedule a Summer inside a flat mapper")
           case KeyFlatMappedProducer(_, op) =>
-            acc.andThen(FlatMapOperation.keyFlatMap[Any, Any, Any](op).asInstanceOf[FlatMapOperation[Any, Any]])
+            val fn = { kv: Any =>
+              val (k, v) = kv.asInstanceOf[(Any, Any)]
+              op(k).map((_, v))
+            }
+            acc.flatMap(fn)
           case ValueFlatMappedProducer(_, op) =>
             val fn = { kv: Any =>
               val (k, v) = kv.asInstanceOf[(Any, Any)]
               op(v).map((k, _))
             }
-            acc.andThen(FlatMapOperation(fn).asInstanceOf[FlatMapOperation[Any, Any]])
+            acc.flatMap(fn)
         }
     }.asInstanceOf[FlatMapOperation[T, U]]
 }

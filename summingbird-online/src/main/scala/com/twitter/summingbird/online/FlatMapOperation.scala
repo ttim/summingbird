@@ -124,9 +124,6 @@ object FlatMapOperation {
   def generic[T, U](fm: T => Future[TraversableOnce[U]]): FlatMapOperation[T, U] =
     new GenericFlatMapOperation(fm)
 
-  def keyFlatMap[K1, K2, V](fm: K1 => TraversableOnce[K2]): FlatMapOperation[(K1, V), (K2, V)] =
-    apply(t => fm(t._1).map((_, t._2)))
-
   def combine[T, K, V, JoinedV](fmSupplier: => FlatMapOperation[T, (K, V)],
     storeSupplier: OnlineServiceFactory[K, JoinedV]): FlatMapOperation[T, (K, (V, Option[JoinedV]))] =
     new FlatMapOperation[T, (K, (V, Option[JoinedV]))] {
