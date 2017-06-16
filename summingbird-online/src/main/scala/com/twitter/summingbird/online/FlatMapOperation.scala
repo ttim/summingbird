@@ -77,14 +77,15 @@ class MappedOperation[T, Intermediate, U](
   }
 
   override def map[S](second: (U) => S): FlatMapOperation[T, S] =
-    new MappedOperation(source, second.compose(fn))
+    new MappedOperation(source, second.compose(boxed.get))
 
   override def flatMap[S](second: (U) => TraversableOnce[S]): FlatMapOperation[T, S] =
-    new FlatMappedOperation(source, second.compose(fn))
+    new FlatMappedOperation(source, second.compose(boxed.get))
 
-
-  override def lift[S]: FlatMapOperation[(S, T), (S, U)] =
-    new MappedOperation[(S, T), (S, Intermediate), (S, U)](source.lift, si => (si._1, fn(si._2)))
+  override def lift[S]: FlatMapOperation[(S, T), (S, U)] = {
+    val unboxed = boxed.get
+    new MappedOperation[(S, T), (S, Intermediate), (S, U)](source.lift, si => (si._1, unboxed(si._2)))
+  }
 
   override def apply(t: T): Future[TraversableOnce[U]] = built(t)
   override def close(): Unit = source.close()
@@ -105,14 +106,22 @@ class FlatMappedOperation[T, Intermediate, U](
     }
   }
 
-  override def map[S](second: (U) => S): FlatMapOperation[T, S] =
-    new FlatMappedOperation[T, Intermediate, S](source, t => fn(t).map(second))
+  override def map[S](second: (U) => S): FlatMapOperation[T, S] = {
+    val unboxed = boxed.get
+    new FlatMappedOperation[T, Intermediate, S](source, t => unboxed(t).map(second))
+  }
 
-  override def flatMap[S](second: (U) => TraversableOnce[S]): FlatMapOperation[T, S] =
-    new FlatMappedOperation[T, Intermediate, S](source, t => fn(t).flatMap(second))
 
-  override def lift[S]: FlatMapOperation[(S, T), (S, U)] =
-    new FlatMappedOperation[(S, T), (S, Intermediate), (S, U)](source.lift, si => fn(si._2).map((si._1, _)))
+  override def flatMap[S](second: (U) => TraversableOnce[S]): FlatMapOperation[T, S] = {
+    val unboxed = boxed.get
+    new FlatMappedOperation[T, Intermediate, S](source, t => unboxed(t).flatMap(second))
+  }
+
+  override def lift[S]: FlatMapOperation[(S, T), (S, U)] = {
+    val unboxed = boxed.get
+    new FlatMappedOperation[(S, T), (S, Intermediate), (S, U)](source.lift,
+      si => unboxed(si._2).map((si._1, _)))
+  }
 
   override def apply(t: T): Future[TraversableOnce[U]] = built(t)
   override def close(): Unit = source.close()
