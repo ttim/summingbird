@@ -31,6 +31,16 @@ trait FlatMapOperation[-T, +U] extends Serializable with Closeable {
   // Helper to add a simple U => TraversableOnce[S] operation at the end of a FlatMapOperation
   def flatMap[S](fn: U => TraversableOnce[S]): FlatMapOperation[T, S] = new FlatMappedOperation(this, fn)
 
+  def lift[S]: FlatMapOperation[(S, T), (S, U)] = {
+    val self = this
+
+    new FlatMapOperation[(S, T), (S, U)] {
+      override def apply(t: (S, T)): Future[TraversableOnce[(S, U)]] =
+        self.apply(t._2).map(_.map((t._1, _)))
+      override def close(): Unit = self.close()
+    }
+  }
+
   /**
    * TODO: Think about getting an implicit FutureCollector here, in
    * case we don't want to completely choke on large expansions (and
@@ -72,6 +82,10 @@ class MappedOperation[T, Intermediate, U](
   override def flatMap[S](second: (U) => TraversableOnce[S]): FlatMapOperation[T, S] =
     new FlatMappedOperation(source, second.compose(fn))
 
+
+  override def lift[S]: FlatMapOperation[(S, T), (S, U)] =
+    new MappedOperation[(S, T), (S, Intermediate), (S, U)](source.lift, si => (si._1, fn(si._2)))
+
   override def apply(t: T): Future[TraversableOnce[U]] = built(t)
   override def close(): Unit = source.close()
 }
@@ -97,6 +111,9 @@ class FlatMappedOperation[T, Intermediate, U](
   override def flatMap[S](second: (U) => TraversableOnce[S]): FlatMapOperation[T, S] =
     new FlatMappedOperation[T, Intermediate, S](source, t => fn(t).flatMap(second))
 
+  override def lift[S]: FlatMapOperation[(S, T), (S, U)] =
+    new FlatMappedOperation[(S, T), (S, Intermediate), (S, U)](source.lift, si => fn(si).map((si._1, _)))
+
   override def apply(t: T): Future[TraversableOnce[U]] = built(t)
   override def close(): Unit = source.close()
 }
@@ -113,6 +130,8 @@ class IdentityFlatMapOperation[T] extends FlatMapOperation[T, T] {
 
   // But if we are composed with something else, just become it
   override def andThen[V](fmo: FlatMapOperation[T, V]): FlatMapOperation[T, V] = fmo
+
+  override def lift[S]: FlatMapOperation[(S, T), (S, T)] = ???
 }
 
 object FlatMapOperation {
