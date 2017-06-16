@@ -23,15 +23,13 @@ import java.io.{ Closeable, Serializable }
 trait FlatMapOperation[-T, +U] extends Serializable with Closeable {
   def apply(t: T): Future[TraversableOnce[U]]
 
-  override def close {}
+  override def close(): Unit = {}
 
   // Helper to add a simple U => S operation at the end of a FlatMapOperation
-  def map[S](fn: U => S): FlatMapOperation[T, S] =
-    andThen(FlatMapOperation(fn.andThen(r => Iterator(r))))
+  def map[S](fn: U => S): FlatMapOperation[T, S] = new MappedOperation(this, fn)
 
   // Helper to add a simple U => TraversableOnce[S] operation at the end of a FlatMapOperation
-  def flatMap[S](fn: U => TraversableOnce[S]): FlatMapOperation[T, S] =
-    andThen(FlatMapOperation(fn))
+  def flatMap[S](fn: U => TraversableOnce[S]): FlatMapOperation[T, S] = new FlatMappedOperation(this, fn)
 
   /**
    * TODO: Think about getting an implicit FutureCollector here, in
@@ -53,24 +51,60 @@ trait FlatMapOperation[-T, +U] extends Serializable with Closeable {
   }
 }
 
-class FunctionFlatMapOperation[T, U](@transient fm: T => TraversableOnce[U])
-    extends FlatMapOperation[T, U] {
-  val boxed = Externalizer(fm)
-  def apply(t: T) = Future.value(boxed.get(t))
+class MappedOperation[T, Intermediate, U](
+  source: FlatMapOperation[T, Intermediate],
+  @transient fn: Intermediate => U
+) extends FlatMapOperation[T, U] {
+  val boxed = Externalizer(fn)
+  lazy val built: T => Future[TraversableOnce[U]] = {
+    val unboxed = boxed.get
+    source match {
+      case _: IdentityFlatMapOperation[_] =>
+        val unboxedCasted = unboxed.asInstanceOf[T => U]
+        t => Future.value(Some(unboxedCasted(t)))
+      case _ => t => source.apply(t).map(_.map(unboxed))
+    }
+  }
+
+  override def map[S](second: (U) => S): FlatMapOperation[T, S] =
+    new MappedOperation(source, second.compose(fn))
+
+  override def flatMap[S](second: (U) => TraversableOnce[S]): FlatMapOperation[T, S] =
+    new FlatMappedOperation(source, second.compose(fn))
+
+  override def apply(t: T): Future[TraversableOnce[U]] = built(t)
+  override def close(): Unit = source.close()
+}
+
+class FlatMappedOperation[T, Intermediate, U](
+  source: FlatMapOperation[T, Intermediate],
+  @transient fn: Intermediate => TraversableOnce[U]
+) extends FlatMapOperation[T, U] {
+  val boxed = Externalizer(fn)
+  lazy val built: T => Future[TraversableOnce[U]] = {
+    val unboxed = boxed.get
+    source match {
+      case _: IdentityFlatMapOperation[_] =>
+        val unboxedCasted = unboxed.asInstanceOf[T => TraversableOnce[U]]
+        t => Future.value(unboxedCasted(t))
+      case _ => t => source.apply(t).map(_.flatMap(unboxed))
+    }
+  }
+
+  override def map[S](second: (U) => S): FlatMapOperation[T, S] =
+    new FlatMappedOperation[T, Intermediate, S](source, t => fn(t).map(second))
+
+  override def flatMap[S](second: (U) => TraversableOnce[S]): FlatMapOperation[T, S] =
+    new FlatMappedOperation[T, Intermediate, S](source, t => fn(t).flatMap(second))
+
+  override def apply(t: T): Future[TraversableOnce[U]] = built(t)
+  override def close(): Unit = source.close()
 }
 
 class GenericFlatMapOperation[T, U](@transient fm: T => Future[TraversableOnce[U]])
     extends FlatMapOperation[T, U] {
   val boxed = Externalizer(fm)
   def apply(t: T) = boxed.get(t)
-}
-
-class FunctionKeyFlatMapOperation[K1, K2, V](@transient fm: K1 => TraversableOnce[K2])
-    extends FlatMapOperation[(K1, V), (K2, V)] {
-  val boxed = Externalizer(fm)
-  def apply(t: (K1, V)) = {
-    Future.value(boxed.get(t._1).map { newK => (newK, t._2) })
-  }
 }
 
 class IdentityFlatMapOperation[T] extends FlatMapOperation[T, T] {
@@ -85,13 +119,13 @@ object FlatMapOperation {
   def identity[T]: FlatMapOperation[T, T] = new IdentityFlatMapOperation()
 
   def apply[T, U](fm: T => TraversableOnce[U]): FlatMapOperation[T, U] =
-    new FunctionFlatMapOperation(fm)
+    new IdentityFlatMapOperation[T].flatMap(fm)
 
   def generic[T, U](fm: T => Future[TraversableOnce[U]]): FlatMapOperation[T, U] =
     new GenericFlatMapOperation(fm)
 
   def keyFlatMap[K1, K2, V](fm: K1 => TraversableOnce[K2]): FlatMapOperation[(K1, V), (K2, V)] =
-    new FunctionKeyFlatMapOperation(fm)
+    apply(t => fm(t._1).map((_, t._2)))
 
   def combine[T, K, V, JoinedV](fmSupplier: => FlatMapOperation[T, (K, V)],
     storeSupplier: OnlineServiceFactory[K, JoinedV]): FlatMapOperation[T, (K, (V, Option[JoinedV]))] =
