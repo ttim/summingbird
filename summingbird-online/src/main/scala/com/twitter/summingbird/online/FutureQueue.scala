@@ -122,7 +122,7 @@ private[summingbird] class FutureQueue[S, T](
     }
   }
 
-  private def addOutstandingFuture(fut: Future[Unit]): Boolean =
+  def addOutstandingFuture(fut: Future[Unit]): Boolean =
     if (!fut.isDefined) {
       numPendingOutstandingFutures.incrementAndGet
       val ensured = fut.ensure(numPendingOutstandingFutures.decrementAndGet)

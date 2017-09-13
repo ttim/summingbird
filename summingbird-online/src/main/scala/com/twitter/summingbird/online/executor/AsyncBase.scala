@@ -55,6 +55,7 @@ abstract class AsyncBase[I, O, S](maxWaitingFutures: MaxWaitingFutures, maxWaiti
         }
         futureQueue.add(failState, Future.exception(ex))
     }
+    futureQueue.addOutstandingFuture(fIn.unit)
     futureQueue.dequeue(maxEmitPerExec.get)
   }
 }
